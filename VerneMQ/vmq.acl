@@ -1,0 +1,5 @@
+user mqttusertest
+topic data/#
+topic live/#
+topic commands/#
+topic register/#

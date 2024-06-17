@@ -1,0 +1,98 @@
+services:
+  irrigator-api:
+    image: irrigator-api
+    container_name: irrigator-api
+    restart: always
+    ports:
+      - 5010:8080
+    depends_on:
+      postgresdb:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development 
+      ###################################
+      DATABASE_HOST: ${DATABASE_HOST}
+      DATABASE_PORT: ${DATABASE_PORT}
+      DATABASE_NAME: ${DATABASE_NAME}
+      DATABASE_USER: ${DATABASE_USERNAME}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+    networks:
+      network:
+        ipv4_address: 172.20.0.2
+  postgresdb:
+    image: postgres:bookworm
+    container_name: postgresdb
+    restart: always
+    user: postgres
+    volumes:
+      - ./Postgres/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:z
+      - ./Postgres/dev_db_dump.sql:/dev_db_dump.sql:z
+      - db-data:/var/lib/postgresql/data:z
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    networks:
+      network:
+        ipv4_address: 172.20.0.3
+    expose:
+      - 5432
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 1s
+      timeout: 8s
+      retries: 10
+  vernemq:
+    image: alpine-vernemq
+    container_name: vernemq
+    restart: always
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      DOCKER_VERNEMQ_USER: ${MQTT_USERNAME}
+    command: bash -c "export DOCKER_VERNEMQ_USER_${MQTT_USERNAME}=${MQTT_PASSWORD}  && ./bin/vernemq.sh"
+    networks:
+      network:
+        ipv4_address: 172.20.0.4
+    ports:
+      - 1883:1883
+      - 8888:8888
+    healthcheck:
+      test: curl -X 'GET' http://172.20.0.4:8888/health || exit 1
+      interval: 2s
+      timeout: 8s
+      start_period: 10s
+      retries: 10
+    volumes:
+      - ./VerneMQ/vmq.acl:/vernemq/etc/vmq.acl:z
+  mqtt-bridge:
+    container_name: mqtt-bridge
+    image: mqtt-bridge
+    restart: always
+    environment:
+      DATABASE_HOST: ${DATABASE_HOST}
+      DATABASE_PORT: ${DATABASE_PORT}
+      DATABASE_NAME: ${DATABASE_NAME}
+      DATABASE_USER: ${DATABASE_USERNAME}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      #######################################
+      MQTT_HOST: ${MQTT_HOST}
+      MQTT_PORT: ${MQTT_PORT}
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      #######################################
+    depends_on:
+      vernemq:
+        condition: service_healthy
+    networks:
+      network:
+        ipv4_address: 172.20.0.5
+volumes:
+  db-data:
+networks:
+  network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
